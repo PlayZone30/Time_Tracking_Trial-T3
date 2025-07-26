@@ -34,6 +34,7 @@ class Employee(Base):
     created_at = Column(Integer)
     is_active = Column(Boolean, default=False)
     activation_token = Column(String, index=True, unique=True)
+    hashed_password = Column(String)
 
     projects = relationship(
         "Project", secondary=project_employees, back_populates="employees"
@@ -98,3 +99,23 @@ class Screenshot(Base):
     timestamp = Column(Integer)
     file_path = Column(String)
     permissions = Column(String)
+
+
+class Activity(Base):
+    __tablename__ = "activities"
+
+    id = Column(String, primary_key=True, index=True)
+    employee_id = Column(String, ForeignKey("employees.id"))
+    date = Column(String, index=True)
+    total_duration = Column(Integer)
+    productive_time = Column(Integer)
+    unproductive_time = Column(Integer)
+
+
+class AppUsage(Base):
+    __tablename__ = "app_usage"
+
+    id = Column(String, primary_key=True, index=True)
+    activity_id = Column(String, ForeignKey("activities.id"))
+    app_name = Column(String)
+    duration = Column(Integer)

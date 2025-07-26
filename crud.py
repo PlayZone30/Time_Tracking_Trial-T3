@@ -3,6 +3,9 @@ import time
 import uuid
 import models, schemas
 from email_utils import send_activation_email
+from security import get_password_hash
+import string
+import random
 
 
 def get_employee(db: Session, employee_id: str):
@@ -13,8 +16,14 @@ def get_employees(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Employee).offset(skip).limit(limit).all()
 
 
+def get_employee_by_email(db: Session, email: str):
+    return db.query(models.Employee).filter(models.Employee.email == email).first()
+
+
 def create_employee(db: Session, employee: schemas.EmployeeCreate):
     activation_token = str(uuid.uuid4())
+    password = "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
+    hashed_password = get_password_hash(password)
     db_employee = models.Employee(
         id=str(uuid.uuid4()),
         name=employee.name,
@@ -29,11 +38,12 @@ def create_employee(db: Session, employee: schemas.EmployeeCreate):
         invited=int(time.time() * 1000),
         created_at=int(time.time() * 1000),
         activation_token=activation_token,
+        hashed_password=hashed_password,
     )
     db.add(db_employee)
     db.commit()
     db.refresh(db_employee)
-    send_activation_email(employee.email, activation_token)
+    send_activation_email(employee.email, activation_token, password)
     return db_employee
 
 
@@ -253,3 +263,40 @@ def delete_screenshot(db: Session, screenshot_id: str):
         db.delete(db_screenshot)
         db.commit()
     return db_screenshot
+
+
+def create_activity(db: Session, activity: schemas.ActivityCreate, employee_id: str):
+    db_activity = models.Activity(
+        id=str(uuid.uuid4()),
+        employee_id=employee_id,
+        date=activity.date,
+        total_duration=activity.total_duration,
+        productive_time=activity.productive_time,
+        unproductive_time=activity.unproductive_time,
+    )
+    db.add(db_activity)
+    db.commit()
+    db.refresh(db_activity)
+
+    for app_usage in activity.app_usage:
+        db_app_usage = models.AppUsage(
+            id=str(uuid.uuid4()),
+            activity_id=db_activity.id,
+            app_name=app_usage.app_name,
+            duration=app_usage.duration,
+        )
+        db.add(db_app_usage)
+
+    db.commit()
+    db.refresh(db_activity)
+    return db_activity
+
+
+def get_activity_by_employee_and_date(db: Session, employee_id: str, date: str):
+    return (
+        db.query(models.Activity)
+        .filter(
+            models.Activity.employee_id == employee_id, models.Activity.date == date
+        )
+        .first()
+    )

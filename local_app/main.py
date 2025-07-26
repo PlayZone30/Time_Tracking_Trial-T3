@@ -5,6 +5,13 @@ import pyautogui
 import os
 import socket
 import uuid
+import psutil
+from collections import defaultdict
+import caffeine
+import requests
+import json
+from datetime import date
+import pygetwindow as gw
 
 
 class TimeTrackerApp:
@@ -15,6 +22,9 @@ class TimeTrackerApp:
         self.logged_in = False
         self.tracking = False
         self.start_time = None
+        self.app_usage = defaultdict(float)
+        self.last_app = None
+        self.last_app_start_time = None
 
         self.create_login_widgets()
 
@@ -57,22 +67,40 @@ class TimeTrackerApp:
         self.start_stop_button.grid(row=2, column=0, columnspan=2)
 
     def login(self):
-        # In a real application, this would make an API call to authenticate the user.
-        # For now, we'll just switch to the tracker view.
-        self.login_frame.destroy()
-        self.create_tracker_widgets()
+        email = self.email_entry.get()
+        password = self.password_entry.get()
+
+        print(f"Attempting to log in with email: {email} and password: {password}")
+        try:
+            response = requests.post(
+                "http://127.0.0.1:8001/api/v1/login",
+                data={"username": email, "password": password},
+            )
+            if response.status_code == 200:
+                self.employee_id = response.json()["access_token"]
+                self.login_frame.destroy()
+                self.create_tracker_widgets()
+            else:
+                # In a real app, you'd show an error message
+                print("Login failed")
+        except Exception as e:
+            print(f"Error during login: {e}")
 
     def toggle_tracking(self):
         if self.tracking:
             self.tracking = False
+            caffeine.off()
             self.start_stop_button.config(text="Start")
+            self.send_activity_data()
         else:
             self.tracking = True
             self.start_stop_button.config(text="Stop")
             self.start_time = time.time()
+            caffeine.on(display=False)
             self.update_timer()
             self.capture_screenshot()
             self.collect_background_info()
+            self.track_app_usage()
 
     def update_timer(self):
         if self.tracking:
@@ -101,6 +129,69 @@ class TimeTrackerApp:
         )
         print(f"IP Address: {ip_address}")
         print(f"MAC Address: {mac_address}")
+
+    def get_active_window_process_name(self):
+        try:
+            active_window = gw.getActiveWindow()
+            if active_window:
+                try:
+                    p = psutil.Process(active_window._hWnd)
+                    return p.name()
+                except psutil.NoSuchProcess:
+                    return active_window.title
+        except Exception as e:
+            print(f"Error getting active window: {e}")
+        return None
+
+    def track_app_usage(self):
+        if self.tracking:
+            current_app = self.get_active_window_process_name()
+
+            if self.last_app:
+                elapsed = time.time() - self.last_app_start_time
+                self.app_usage[self.last_app] += elapsed
+
+            self.last_app = current_app
+            self.last_app_start_time = time.time()
+
+            # Print current app usage for debugging
+            print(self.app_usage)
+
+            self.root.after(1000, self.track_app_usage)
+
+
+    def send_activity_data(self):
+        today = date.today().isoformat()
+        app_usage_list = [
+            {"app_name": app, "duration": int(duration)}
+            for app, duration in self.app_usage.items()
+        ]
+
+        # In a real app, you'd get the employee_id after login
+        data = {
+            "date": today,
+            "employee_id": self.employee_id,
+            "total_duration": int(time.time() - self.start_time),
+            "productive_time": 0,  # Placeholder
+            "unproductive_time": 0,  # Placeholder
+            "app_usage": app_usage_list,
+        }
+
+        try:
+            response = requests.post(
+                "http://127.0.0.1:8001/api/v1/activity",
+                data=json.dumps(data),
+                headers={"Content-Type": "application/json"},
+            )
+            if response.status_code == 200:
+                print("Activity data sent successfully.")
+            else:
+                print(f"Failed to send activity data: {response.text}")
+        except Exception as e:
+            print(f"Error sending activity data: {e}")
+
+        # Reset app usage for the next session
+        self.app_usage = defaultdict(float)
 
 
 if __name__ == "__main__":

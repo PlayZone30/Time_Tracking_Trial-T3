@@ -3,9 +3,9 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import config
 
-def send_activation_email(recipient_email: str, token: str):
+def send_activation_email(recipient_email: str, token: str, password: str):
     sender_email = config.SMTP_USERNAME
-    password = config.SMTP_PASSWORD
+    smtp_password = config.SMTP_PASSWORD
 
     message = MIMEMultipart("alternative")
     message["Subject"] = "Activate Your T3 Account"
@@ -18,6 +18,8 @@ def send_activation_email(recipient_email: str, token: str):
     Hi,
     Please activate your T3 account by clicking the following link:
     {activation_link}
+
+    Your password is: {password}
     """
     html = f"""
     <html>
@@ -26,6 +28,7 @@ def send_activation_email(recipient_email: str, token: str):
                Please activate your T3 account by clicking the link below:<br>
                <a href="{activation_link}">Activate Account</a>
             </p>
+            <p>Your password is: <b>{password}</b></p>
         </body>
     </html>
     """
@@ -39,7 +42,7 @@ def send_activation_email(recipient_email: str, token: str):
     try:
         server = smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT)
         server.starttls()
-        server.login(sender_email, password)
+        server.login(sender_email, smtp_password)
         server.sendmail(sender_email, recipient_email, message.as_string())
         server.quit()
         print(f"Activation email sent to {recipient_email}")

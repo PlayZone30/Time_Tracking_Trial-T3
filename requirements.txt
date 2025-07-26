@@ -3,3 +3,8 @@ uvicorn
 sqlalchemy
 pydantic
 pyautogui
+psutil
+caffeine
+passlib[bcrypt]
+pygetwindow
+python-multipart

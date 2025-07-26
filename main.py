@@ -1,7 +1,9 @@
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 import crud, models, schemas
+from security import verify_password
 from database import SessionLocal, engine
 
 models.Base.metadata.create_all(bind=engine)
@@ -82,7 +84,7 @@ def read_projects(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
 
 @app.get("/api/v1/project/{project_id}", response_model=schemas.Project)
 def read_project(project_id: str, db: Session = Depends(get_db)):
-    db_project = crud.get_project(db, project_id=project_id)
+    db_project = crud.get_project(db, project_id=project_.id)
     if db_project is None:
         raise HTTPException(status_code=404, detail="Project not found")
     return db_project
@@ -209,3 +211,36 @@ def delete_screenshot(screenshot_id: str, db: Session = Depends(get_db)):
     if db_screenshot is None:
         raise HTTPException(status_code=404, detail="Screenshot not found")
     return db_screenshot
+
+
+@app.post("/api/v1/login")
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    employee = crud.get_employee_by_email(db, email=form_data.username)
+    if not employee or not verify_password(
+        form_data.password, employee.hashed_password
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return {"access_token": employee.id, "token_type": "bearer"}
+
+
+@app.post("/api/v1/activity", response_model=schemas.Activity)
+def create_activity(
+    activity: schemas.ActivityCreate,
+    employee_id: str,
+    db: Session = Depends(get_db),
+):
+    return crud.create_activity(db=db, activity=activity, employee_id=employee_id)
+
+
+@app.get("/api/v1/activity/{employee_id}/{date}", response_model=schemas.Activity)
+def read_activity(employee_id: str, date: str, db: Session = Depends(get_db)):
+    db_activity = crud.get_activity_by_employee_and_date(
+        db, employee_id=employee_id, date=date
+    )
+    if db_activity is None:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    return db_activity

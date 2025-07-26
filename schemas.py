@@ -92,6 +92,43 @@ class Project(ProjectBase):
     class Config:
         from_attributes = True
 
+
+class AppUsageBase(BaseModel):
+    app_name: str
+    duration: int
+
+
+class AppUsageCreate(AppUsageBase):
+    pass
+
+
+class AppUsage(AppUsageBase):
+    id: str
+    activity_id: str
+
+    class Config:
+        from_attributes = True
+
+
+class ActivityBase(BaseModel):
+    date: str
+    total_duration: int
+    productive_time: int
+    unproductive_time: int
+
+
+class ActivityCreate(ActivityBase):
+    app_usage: List[AppUsageCreate] = []
+
+
+class Activity(ActivityBase):
+    id: str
+    employee_id: str
+    app_usage: List[AppUsage] = []
+
+    class Config:
+        from_attributes = True
+
 class Task(TaskBase):
     id: str
     project_id: str
