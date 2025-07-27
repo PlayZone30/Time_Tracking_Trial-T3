@@ -2,6 +2,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from fastapi.middleware.cors import CORSMiddleware
 import crud, models, schemas
 from security import verify_password
 from database import SessionLocal, engine
@@ -9,6 +10,14 @@ from database import SessionLocal, engine
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 
@@ -224,7 +233,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return {"access_token": employee.id, "token_type": "bearer"}
+    return {"access_token": employee.id, "token_type": "bearer", "user": employee}
 
 
 @app.post("/api/v1/activity", response_model=schemas.Activity)
@@ -244,3 +253,11 @@ def read_activity(employee_id: str, date: str, db: Session = Depends(get_db)):
     if db_activity is None:
         raise HTTPException(status_code=404, detail="Activity not found")
     return db_activity
+
+
+@app.get("/api/v1/dashboard/{employee_id}")
+def read_dashboard(employee_id: str, db: Session = Depends(get_db)):
+    dashboard_data = crud.get_dashboard_data(db, employee_id=employee_id)
+    if dashboard_data is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    return dashboard_data

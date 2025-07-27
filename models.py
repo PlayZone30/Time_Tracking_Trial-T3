@@ -35,6 +35,8 @@ class Employee(Base):
     is_active = Column(Boolean, default=False)
     activation_token = Column(String, index=True, unique=True)
     hashed_password = Column(String)
+    weekly_work_duration = Column(Integer, default=0)
+    weekly_earnings = Column(Integer, default=0)
 
     projects = relationship(
         "Project", secondary=project_employees, back_populates="employees"
@@ -53,6 +55,7 @@ class Project(Base):
     creator_id = Column(String)
     organization_id = Column(String)
     created_at = Column(Integer)
+    total_duration = Column(Integer, default=0)
 
     employees = relationship(
         "Employee", secondary=project_employees, back_populates="projects"

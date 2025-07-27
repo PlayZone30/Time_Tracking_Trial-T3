@@ -265,14 +265,17 @@ def delete_screenshot(db: Session, screenshot_id: str):
     return db_screenshot
 
 
+from productivity import calculate_productivity
+
 def create_activity(db: Session, activity: schemas.ActivityCreate, employee_id: str):
+    productive_time, unproductive_time = calculate_productivity(activity.app_usage)
     db_activity = models.Activity(
         id=str(uuid.uuid4()),
         employee_id=employee_id,
         date=activity.date,
         total_duration=activity.total_duration,
-        productive_time=activity.productive_time,
-        unproductive_time=activity.unproductive_time,
+        productive_time=productive_time,
+        unproductive_time=unproductive_time,
     )
     db.add(db_activity)
     db.commit()
@@ -300,3 +303,20 @@ def get_activity_by_employee_and_date(db: Session, employee_id: str, date: str):
         )
         .first()
     )
+
+
+def get_dashboard_data(db: Session, employee_id: str):
+    employee = get_employee(db, employee_id)
+    if not employee:
+        return None
+
+    # In a real app, you would calculate this data based on time entries
+    # For now, we'll just return the values from the model
+    return {
+        "weekly_work_duration": employee.weekly_work_duration,
+        "weekly_earnings": employee.weekly_earnings,
+        "projects": [
+            {"name": p.name, "total_duration": p.total_duration}
+            for p in employee.projects
+        ],
+    }

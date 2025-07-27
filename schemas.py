@@ -64,6 +64,8 @@ class Employee(EmployeeBase):
     deactivated: int
     invited: int
     created_at: int
+    weekly_work_duration: int
+    weekly_earnings: int
     projects: List[str] = []
 
     @field_validator('projects', mode='before')
@@ -81,6 +83,7 @@ class Project(ProjectBase):
     creator_id: str
     organization_id: str
     created_at: int
+    total_duration: int
     employees: List[str] = []
 
     @field_validator('employees', mode='before')
