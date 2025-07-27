@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Play, Clock, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -9,6 +9,10 @@ export default function TimeTracker() {
   const [isTracking, setIsTracking] = useState(false);
   const [currentTime, setCurrentTime] = useState("00:00:00");
   const [startTime, setStartTime] = useState<number | null>(null);
+  
+  // Use a ref to hold the latest startTime value for our event listener
+  const startTimeRef = useRef(startTime);
+  startTimeRef.current = startTime;
 
   const { data: projects = [] } = useQuery({
     queryKey: ["/api/v1/project"],
@@ -51,19 +55,25 @@ export default function TimeTracker() {
     return () => clearInterval(interval);
   }, [isTracking, startTime]);
 
+  // FIX: This useEffect now runs only once on component mount
   useEffect(() => {
     const handleAppUsage = (appUsage: any) => {
-      sendActivityData(appUsage);
+      // Pass the startTime from the ref, which is always up-to-date
+      sendActivityData(appUsage, startTimeRef.current);
     };
 
     const handleSystemSleep = () => {
+      // We can directly check the isTracking state here if needed,
+      // but modifying it should be done carefully.
+      // For now, we assume the main process handles the timer state correctly
+      // and only sends app-usage when tracking stops.
       if (isTracking) {
         setIsTracking(false);
       }
     };
 
     const handleSystemWake = () => {
-      if (startTime) {
+      if (startTimeRef.current) {
         setIsTracking(true);
       }
     };
@@ -77,9 +87,10 @@ export default function TimeTracker() {
       window.electron.ipcRenderer.removeListener('system-sleep', handleSystemSleep);
       window.electron.ipcRenderer.removeListener('system-wake', handleSystemWake);
     };
-  }, [isTracking, startTime]);
+  }, []); // <-- Empty dependency array ensures this runs only once
 
-  const sendActivityData = async (appUsage: any) => {
+  // FIX: Modified to accept startTime from the event handler
+  const sendActivityData = async (appUsage: any, currentStartTime: number | null) => {
     const today = new Date().toISOString().split("T")[0];
     const app_usage_list = Object.entries(appUsage).map(([appName, duration]) => ({
       app_name: appName,
@@ -89,9 +100,11 @@ export default function TimeTracker() {
     const token = localStorage.getItem("token");
     if (!token) return;
 
+    const total_duration = app_usage_list.reduce((total, item) => total + item.duration, 0);
+
     const data = {
       date: today,
-      total_duration: Math.round(Date.now() - (startTime || Date.now())),
+      total_duration: total_duration,
       productive_time: 0, // Placeholder
       unproductive_time: 0, // Placeholder
       app_usage: app_usage_list,
@@ -121,7 +134,8 @@ export default function TimeTracker() {
       setIsTracking(false);
       window.electron.ipcRenderer.send('stop-tracking');
     } else {
-      setStartTime(Date.now());
+      const now = Date.now();
+      setStartTime(now);
       setIsTracking(true);
       window.electron.ipcRenderer.send('start-tracking');
     }
