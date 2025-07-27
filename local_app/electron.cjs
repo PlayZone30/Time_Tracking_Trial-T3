@@ -1,106 +1,110 @@
-const { app, BrowserWindow, ipcMain, desktopCapturer, powerMonitor, systemPreferences } = require('electron');
+// electron.cjs
+
+const { app, BrowserWindow, ipcMain, powerMonitor, systemPreferences } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const activeWin = require('active-win');
+const { execSync } = require('child_process');
+
 let win;
 function createWindow() {
-win = new BrowserWindow({
-width: 800,
-height: 600,
-webPreferences: {
-preload: path.join(__dirname, 'preload.js'),
-},
-});
-win.loadURL('http://localhost:5173');
-win.webContents.openDevTools();
+  win = new BrowserWindow({
+    width: 800,
+    height: 600,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+  win.loadURL('http://localhost:5173');
+  win.webContents.openDevTools();
 }
+
 let trackingInterval;
-let appUsage = {}; // Stores time spent on each app in milliseconds
+let appUsage = {};
 let lastCheckTime = null;
-app.whenReady().then(async () => { // Make the function async
-  // --- FIX 1: REQUEST PERMISSIONS ---
-  // On macOS, you must request screen recording permission.
-  // This will prompt the user on the first run.
-  if (process.platform === 'darwin') { // 'darwin' is the name for macOS
+
+app.whenReady().then(async () => {
+  if (process.platform === 'darwin') {
     const status = systemPreferences.getMediaAccessStatus('screen');
     if (status !== 'granted') {
       await systemPreferences.askForMediaAccess('screen');
     }
   }
-  // --- END OF FIX 1 ---
 
   createWindow();
-ipcMain.on('start-tracking', () => {
-// Immediately take a screenshot when tracking starts, then start the interval
-takeScreenshot();
-startScreenshotInterval();
-if (trackingInterval) clearInterval(trackingInterval);
 
-appUsage = {}; // Reset usage data
-lastCheckTime = Date.now();
-
-trackingInterval = setInterval(async () => {
-  try {
-    const window = await activeWin();
-    const now = Date.now();
-    const deltaTime = now - lastCheckTime;
-
-    if (window) {
-      const appName = window.owner.name;
-      if (!appUsage[appName]) {
-        appUsage[appName] = 0;
-      }
-      appUsage[appName] += deltaTime;
-    }
+  ipcMain.on('start-tracking', () => {
+    takeScreenshot(); // Take one screenshot immediately
+    startScreenshotInterval(); // Start the interval
     
-    lastCheckTime = now;
+    if (trackingInterval) clearInterval(trackingInterval);
+    appUsage = {};
+    lastCheckTime = Date.now();
+    trackingInterval = setInterval(async () => {
+      try {
+        const window = await activeWin();
+        if (window) {
+          const now = Date.now();
+          const deltaTime = now - lastCheckTime;
+          const appName = window.owner.name;
+          if (!appUsage[appName]) {
+            appUsage[appName] = 0;
+          }
+          appUsage[appName] += deltaTime;
+          lastCheckTime = now;
+        }
+      } catch (error) { /* suppress errors */ }
+    }, 1000);
+  });
+  
+  ipcMain.on('stop-tracking', (event) => {
+    stopScreenshotInterval();
+    if (trackingInterval) {
+      clearInterval(trackingInterval);
+      trackingInterval = null;
+    }
+    event.sender.send('app-usage', appUsage);
+    appUsage = {};
+  });
 
-  } catch (error) {
-    console.error('Error getting active window:', error);
-  }
-}, 1000);
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+
+  powerMonitor.on('suspend', () => {
+    win.webContents.send('system-sleep');
+  });
+
+  powerMonitor.on('resume', () => {
+    win.webContents.send('system-wake');
+  });
 });
-ipcMain.on('stop-tracking', (event) => {
-stopScreenshotInterval();
-if (trackingInterval) {
-clearInterval(trackingInterval);
-trackingInterval = null;
-}
-event.sender.send('app-usage', appUsage);
-appUsage = {};
-});
-app.on('activate', () => {
-if (BrowserWindow.getAllWindows().length === 0) {
-createWindow();
-}
-});
-powerMonitor.on('suspend', () => {
-win.webContents.send('system-sleep');
-});
-powerMonitor.on('resume', () => {
-win.webContents.send('system-wake');
-});
-});
+
 app.on('window-all-closed', () => {
-if (process.platform !== 'darwin') {
-app.quit();
-}
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
 });
+
 let screenshotInterval;
 function startScreenshotInterval() {
-if (screenshotInterval) clearInterval(screenshotInterval);
-// Set to run takeScreenshot every 10 minutes (600,000 milliseconds)
-screenshotInterval = setInterval(takeScreenshot, 600000);
+  if (screenshotInterval) clearInterval(screenshotInterval);
+  // Set to run takeScreenshot every 10 minutes (600,000 milliseconds)
+  screenshotInterval = setInterval(takeScreenshot, 60000);
 }
+
 function stopScreenshotInterval() {
-if (screenshotInterval) {
-clearInterval(screenshotInterval);
-screenshotInterval = null;
+  if (screenshotInterval) {
+    clearInterval(screenshotInterval);
+    screenshotInterval = null;
+  }
 }
-}
-// --- MODIFIED FUNCTION ---
+
+// --- NEW SIMPLIFIED takeScreenshot FUNCTION ---
 async function takeScreenshot() {
-  console.log("Attempting to take screenshots of all windows...");
+  console.log("Attempting to take a screenshot of the active window...");
   const timestamp = new Date().toISOString().replace(/:/g, '-');
   const screenshotsPath = path.join(__dirname, 'screenshots');
 
@@ -109,40 +113,43 @@ async function takeScreenshot() {
   }
 
   try {
-    const sources = await desktopCapturer.getSources({
-        types: ['window', 'screen'], // Include screen just in case window fails
-        thumbnailSize: { width: 1920, height: 1080 }
-    });
+    const activeWindow = await activeWin();
 
-    // --- FIX 2: DEBUG LOGGING ---
-    console.log('Found sources:', sources.length);
-    if (sources.length === 0) {
-        console.log('Desktop Capturer returned no sources. Check OS permissions.');
-    }
-    // --- END OF FIX 2 ---
+    if (activeWindow) {
+      const windowId = activeWindow.id;
+      const appName = activeWindow.owner.name;
+      const windowName = activeWindow.title;
 
-    for (const source of sources) {
-      const appName = source.name.toLowerCase();
-
-      // Improved filtering
-      if (!source.name || appName === 'rest-express' || appName === 'electron' || appName === 'entire screen') {
-        // Log skipped windows to see what's being ignored
-        console.log(`Skipping source: ${source.name}`);
-        continue;
+      // Filter out our own app
+      if (appName === 'rest-express' || appName === 'Electron') {
+        console.log(`Skipping screenshot of own application: ${appName}`);
+        return;
       }
 
-      const sanitizedAppName = source.name.replace(/[\\?%*:|"<>.]/g, '');
-      const screenshotPath = path.join(screenshotsPath, `${sanitizedAppName}-${timestamp}.png`);
+      const sanitizedAppName = appName.replace(/[^a-z0-9]/gi, '_');
+      const sanitizedWindowName = windowName.replace(/[^a-z0-9]/gi, '_');
+      const filename = path.join(screenshotsPath, `${sanitizedAppName}_${sanitizedWindowName}_${timestamp}.png`);
+
+      // Use the -l flag with the window ID for a silent, direct capture.
+      console.log(`Capturing active window ID ${windowId} (${appName}: ${windowName})`);
+      execSync(`screencapture -l${windowId} "${filename}"`);
       
-      try {
-        const imageBuffer = source.thumbnail.toPNG();
-        fs.writeFileSync(screenshotPath, imageBuffer);
-        console.log(`Screenshot saved for: ${source.name}`);
-      } catch (error) {
-        console.error(`Failed to save screenshot for ${source.name}:`, error);
+      if (fs.existsSync(filename) && fs.statSync(filename).size > 0) {
+        console.log(`✓ Screenshot SAVED: ${filename}`);
+        // Send screenshot data to the renderer process
+        if (win) {
+          win.webContents.send('screenshot-taken', {
+            path: filename,
+            timestamp: Math.floor(Date.now() / 1000) // Unix timestamp in seconds
+          });
+        }
+      } else {
+        console.log(`✗ Screenshot file for active window was empty or not created.`);
       }
+    } else {
+      console.log("No active window found to screenshot.");
     }
   } catch (error) {
-    console.error('Error capturing desktop sources:', error);
+    console.error('Error taking screenshot of active window:', error.message);
   }
 }

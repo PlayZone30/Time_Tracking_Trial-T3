@@ -82,10 +82,17 @@ export default function TimeTracker() {
     window.electron.ipcRenderer.on('system-sleep', handleSystemSleep);
     window.electron.ipcRenderer.on('system-wake', handleSystemWake);
 
+    const handleScreenshotTaken = (screenshot: { path: string, timestamp: number }) => {
+      sendScreenshotData(screenshot);
+    };
+
+    window.electron.ipcRenderer.on('screenshot-taken', handleScreenshotTaken);
+
     return () => {
       window.electron.ipcRenderer.removeListener('app-usage', handleAppUsage);
       window.electron.ipcRenderer.removeListener('system-sleep', handleSystemSleep);
       window.electron.ipcRenderer.removeListener('system-wake', handleSystemWake);
+      window.electron.ipcRenderer.removeListener('screenshot-taken', handleScreenshotTaken);
     };
   }, []); // <-- Empty dependency array ensures this runs only once
 
@@ -126,6 +133,36 @@ export default function TimeTracker() {
       }
     } catch (error) {
       console.error("Error sending activity data:", error);
+    }
+  };
+
+  const sendScreenshotData = async (screenshot: { path: string, timestamp: number }) => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    const data = {
+      employee_id: token,
+      timestamp: screenshot.timestamp,
+      file_path: screenshot.path,
+      permissions: "read", // Placeholder
+    };
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:8001/api/v1/analytics/screenshot`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(data),
+        }
+      );
+      if (!response.ok) {
+        throw new Error("Failed to send screenshot data");
+      }
+    } catch (error) {
+      console.error("Error sending screenshot data:", error);
     }
   };
 
