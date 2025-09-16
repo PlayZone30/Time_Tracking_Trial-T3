@@ -17,7 +17,7 @@ This project is a time tracking application similar to Insightful, built as a tr
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://your-repository-url.com/t3.git
+    git clone https://github.com/PlayZone30/Time_Tracking_Trial-T3.git
     cd t3
     ```
 
